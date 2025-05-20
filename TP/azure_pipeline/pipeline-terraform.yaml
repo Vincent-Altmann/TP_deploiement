@@ -1,0 +1,135 @@
+trigger:
+- main
+
+pool:
+  name: TPYNOV
+
+variables:
+- group: reretest
+- name: TF_ROOT
+  value: 'terraform'
+
+stages:
+
+- stage: TerraformPlan
+  displayName: 'Terraform Plan'
+  jobs:
+  - job: Plan
+    displayName: 'Run Terraform Plan'
+    pool:
+      name: TPYNOV
+    steps:
+    - checkout: self
+
+    - powershell: |
+        terraform -version
+      displayName: 'Check Terraform Version'
+
+    - powershell: |
+        terraform init `
+          -backend-config="resource_group_name=$env:ARM_RESOURCE_GROUP_NAME" `
+          -backend-config="storage_account_name=$env:ARM_STORAGE_ACCOUNT_NAME" `
+          -backend-config="container_name=$env:ARM_CONTAINER_NAME" `
+          -backend-config="key=terraform.tfstate" `
+          -backend-config="access_key=$env:ARM_ACCESS_KEY"
+      workingDirectory: $(TF_ROOT)
+      displayName: 'Terraform Init'
+      env:
+        ARM_RESOURCE_GROUP_NAME: $(ARM_RESOURCE_GROUP_NAME)
+        ARM_STORAGE_ACCOUNT_NAME: $(ARM_STORAGE_ACCOUNT_NAME)
+        ARM_CONTAINER_NAME: $(ARM_CONTAINER_NAME)
+        ARM_ACCESS_KEY: $(ARM_ACCESS_KEY)
+
+    - powershell: |
+        terraform plan -out=tfplan
+      workingDirectory: $(TF_ROOT)
+      displayName: 'Terraform Plan'
+      env:
+        ARM_CLIENT_ID: $(ARM_AZURE_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_AZURE_CLIENT_SECRET)
+        ARM_SUBSCRIPTION_ID: $(ARM_AZURE_SUBSCRIPTION_ID)
+        ARM_TENANT_ID: $(ARM_AZURE_TENANT_ID)
+
+        TF_VAR_backend_rg_name: $(ARM_RESOURCE_GROUP_NAME)
+        TF_VAR_backend_account_name: $(ARM_STORAGE_ACCOUNT_NAME)
+        TF_VAR_backend_container_name: $(ARM_CONTAINER_NAME)
+        TF_VAR_backend_access_key: $(ARM_ACCESS_KEY)
+        TF_VAR_admin_password: $(ARM_VM_PASSWORD)
+        TF_VAR_subscription_id: $(ARM_AZURE_SUBSCRIPTION_ID)
+        TF_VAR_client_id: $(ARM_AZURE_CLIENT_ID)
+        TF_VAR_client_secret: $(ARM_AZURE_CLIENT_SECRET)
+        TF_VAR_tenant_id: $(ARM_AZURE_TENANT_ID)
+
+    - publish: $(TF_ROOT)/tfplan
+      artifact: tfplan
+      displayName: 'Publish tfplan artifact'
+
+- stage: TerraformApply
+  displayName: 'Terraform Apply'
+  dependsOn: TerraformPlan
+  condition: succeeded()
+  jobs:
+  - job: Apply
+    displayName: 'Run Terraform Apply'
+    pool:
+      name: TPYNOV
+    steps:
+    - checkout: self
+
+    - download: current
+      artifact: tfplan
+      displayName: 'Download tfplan artifact'
+
+    - powershell: |
+        Get-ChildItem -Recurse $env:PIPELINE_WORKSPACE
+      displayName: 'Show downloaded artifact files'
+
+    - powershell: |
+        terraform init `
+          -backend-config="resource_group_name=$env:ARM_RESOURCE_GROUP_NAME" `
+          -backend-config="storage_account_name=$env:ARM_STORAGE_ACCOUNT_NAME" `
+          -backend-config="container_name=$env:ARM_CONTAINER_NAME" `
+          -backend-config="key=terraform.tfstate" `
+          -backend-config="access_key=$env:ARM_ACCESS_KEY"
+      workingDirectory: $(TF_ROOT)
+      displayName: 'Terraform Init (Apply)'
+      env:
+        ARM_RESOURCE_GROUP_NAME: $(ARM_RESOURCE_GROUP_NAME)
+        ARM_STORAGE_ACCOUNT_NAME: $(ARM_STORAGE_ACCOUNT_NAME)
+        ARM_CONTAINER_NAME: $(ARM_CONTAINER_NAME)
+        ARM_ACCESS_KEY: $(ARM_ACCESS_KEY)
+
+    - powershell: |
+        terraform apply -auto-approve "$env:PIPELINE_WORKSPACE\tfplan\tfplan"
+      workingDirectory: $(TF_ROOT)
+      displayName: 'Terraform Apply'
+      env:
+        PIPELINE_WORKSPACE: $(Pipeline.Workspace)
+
+        ARM_CLIENT_ID: $(ARM_AZURE_CLIENT_ID)
+        ARM_CLIENT_SECRET: $(ARM_AZURE_CLIENT_SECRET)
+        ARM_SUBSCRIPTION_ID: $(ARM_AZURE_SUBSCRIPTION_ID)
+        ARM_TENANT_ID: $(ARM_AZURE_TENANT_ID)
+
+        TF_VAR_backend_rg_name: $(ARM_RESOURCE_GROUP_NAME)
+        TF_VAR_backend_account_name: $(ARM_STORAGE_ACCOUNT_NAME)
+        TF_VAR_backend_container_name: $(ARM_CONTAINER_NAME)
+        TF_VAR_backend_access_key: $(ARM_ACCESS_KEY)
+        TF_VAR_admin_password: $(ARM_VM_PASSWORD)
+        TF_VAR_subscription_id: $(ARM_AZURE_SUBSCRIPTION_ID)
+        TF_VAR_client_id: $(ARM_AZURE_CLIENT_ID)
+        TF_VAR_client_secret: $(ARM_AZURE_CLIENT_SECRET)
+        TF_VAR_tenant_id: $(ARM_AZURE_TENANT_ID)
+
+    - powershell: |
+        Write-Host "Export de la clé SSH privée générée par Terraform..."
+
+        $privateKey = terraform output -raw ssh_private_key
+
+        $keyPath = "$(System.DefaultWorkingDirectory)\id_rsa"
+        $privateKey | Out-File -Encoding ascii -FilePath $keyPath -Force
+
+        Write-Host "Clé SSH écrite dans : $keyPath"
+        Write-Host "Pas de permissions modifiées (icacls désactivé)"
+      workingDirectory: $(TF_ROOT)
+      displayName: 'Export SSH Private Key (sans icacls)'
