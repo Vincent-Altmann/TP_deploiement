@@ -1,0 +1,24 @@
+[
+    {
+      "id": 1,
+      "type": "température",
+      "value": 22.5,
+      "unit": "°C",
+      "location": "Salle 101"
+    },
+    {
+      "id": 2,
+      "type": "humidité",
+      "value": 45,
+      "unit": "%",
+      "location": "Salle 101"
+    },
+    {
+      "id": 3,
+      "type": "CO2",
+      "value": 780,
+      "unit": "ppm",
+      "location": "Laboratoire"
+    }
+  ]
+  

@@ -1,0 +1,60 @@
+---
+- name: Déploiement de l'API Node.js
+  hosts: web
+  become: true
+
+  vars:
+    api_repo_url: "https://github.com/TON-UTILISATEUR/ton-repo-api.git"
+    api_dir: "/home/azureuser/api"
+
+  tasks:
+    - name: Mise à jour des paquets
+      apt:
+        update_cache: yes
+
+    - name: Installation de Git
+      apt:
+        name: git
+        state: present
+
+    - name: Installation de Node.js et npm (via NodeSource)
+      shell: |
+        curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+        apt-get install -y nodejs
+
+    - name: Vérifier si le dossier API existe
+      stat:
+        path: "{{ api_dir }}"
+      register: api_dir_status
+
+    - name: Cloner le dépôt de l'API
+      git:
+        repo: "{{ api_repo_url }}"
+        dest: "{{ api_dir }}"
+        version: main
+        force: yes
+      when: not api_dir_status.stat.exists
+
+    - name: Mettre à jour le dépôt (si déjà cloné)
+      git:
+        repo: "{{ api_repo_url }}"
+        dest: "{{ api_dir }}"
+        version: main
+        force: yes
+      when: api_dir_status.stat.exists
+
+    - name: Installer les dépendances Node.js
+      npm:
+        path: "{{ api_dir }}"
+
+    - name: Installer PM2
+      npm:
+        name: pm2
+        global: yes
+
+    - name: Démarrer l’API avec PM2
+      shell: |
+        pm2 delete all || true
+        pm2 start index.js --name "api"
+        pm2 save
+        pm2 startup systemd -u azureuser --hp /home/azureuser
